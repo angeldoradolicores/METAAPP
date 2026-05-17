@@ -1,725 +1,463 @@
-/* ══════════════════════════════════════════════════════════
-   app.js — Goretti Social
-   Firebase Firestore + Auth
-══════════════════════════════════════════════════════════ */
+/* ── Goretti Social — app.js ── */
 
-// ─── Estado Global ───────────────────────────────────────
-let currentUser  = null;
-let currentPostId = null;
-let postsUnsubscribe = null;
-let adminAvatarUrl = null;  // Foto de perfil del admin
+// ── Estado ──────────────────────────────────────────────────
+let currentUser = null, currentPostId = null, postsUnsubscribe = null, adminAvatarUrl = null;
+let replyingTo = null; // { commentId, authorName }
 
-// ─── Palabras Prohibidas (filtro de lenguaje) ─────────────
-const BANNED_WORDS = [
-  "mierda","puta","puto","hijueputa","hijueputo","marica","gonorrea",
-  "malparido","malparida","hp","idiota","imbecil","imbécil","estupido",
-  "estúpido","estupida","estúpida","pendejo","pendeja","bastardo",
-  "bastarda","culero","culear","culo","coño","verga","pene","vagina",
-  "joder","coger","follar","chingar","cabron","cabrón","cabrona",
-  "arrecho","arrechera","mondá","mondá","mondarsela","güevón","huevón",
-  "huevona","gonorrea","berriondo","cachón","zorra","perra","bitch",
-  "fuck","shit","ass","damn","crap","sexy","putisima","putísima",
-  "maricon","maricón","maricona","sapo","sapos","plaga","hdp"
-];
+// ── Filtro lenguaje ─────────────────────────────────────────
+const BAD = ['mierda','puta','puto','hijueputa','marica','gonorrea','malparido','malparida',
+  'pendejo','pendeja','bastardo','culo','coño','verga','joder','coger','follar','chingar',
+  'cabron','cabrona','arrecho','güevón','huevón','huevona','zorra','perra','bitch','fuck',
+  'shit','damn','maricon','hdp','estupido','idiota','imbecil','hp','culero','mondá'];
+function bad(t){ const n=t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  return BAD.some(w=>new RegExp('\\b'+w.normalize('NFD').replace(/[\u0300-\u036f]/g,'')+'\\b','i').test(n)); }
 
-function containsBannedWord(text) {
-  const lower = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  return BANNED_WORDS.some(w => {
-    const wn = w.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const regex = new RegExp(`\\b${wn}\\b`, "i");
-    return regex.test(lower);
-  });
+// ── DOM utils ───────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const show  = id => { const e=$(id); if(e) e.classList.remove('hide'); };
+const hide  = id => { const e=$(id); if(e) e.classList.add('hide'); };
+const modal = id => { const e=$(id); if(e) e.classList.remove('hide'); document.body.style.overflow='hidden'; };
+const unmodal=id => { const e=$(id); if(e) e.classList.add('hide'); document.body.style.overflow=''; };
+
+function toast(msg, type='info', ms=3500){
+  const icons={success:'✅',error:'❌',info:'ℹ️'};
+  const el=document.createElement('div'); el.className=`toast ${type}`;
+  el.innerHTML=`<span>${icons[type]}</span><span>${msg}</span>`;
+  $('toastContainer').appendChild(el);
+  setTimeout(()=>{ el.classList.add('out'); el.addEventListener('animationend',()=>el.remove()); },ms);
 }
 
-// ─── Toast Notifications ──────────────────────────────────
-function toast(msg, type = "info", duration = 3500) {
-  const icons = { success: "✅", error: "❌", info: "ℹ️" };
-  const container = document.getElementById("toastContainer");
-  const el = document.createElement("div");
-  el.className = `toast ${type}`;
-  el.innerHTML = `<span>${icons[type] || "ℹ️"}</span><span>${msg}</span>`;
-  container.appendChild(el);
-  setTimeout(() => {
-    el.classList.add("out");
-    el.addEventListener("animationend", () => el.remove());
-  }, duration);
+function fmt(ts){
+  if(!ts) return '';
+  const d=ts.toDate?ts.toDate():new Date(ts);
+  return d.toLocaleDateString('es-CO',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
 }
 
-// ─── Utilidades DOM ──────────────────────────────────────
-function $(id) { return document.getElementById(id); }
-function show(id) { const e = $(id); if (e) e.classList.remove("hide"); }
-function hide(id) { const e = $(id); if (e) e.classList.add("hide"); }
-function showOverlay(id) { const e = $(id); if (e) e.classList.remove("hide"); document.body.style.overflow = "hidden"; }
-function hideOverlay(id) { const e = $(id); if (e) e.classList.add("hide"); document.body.style.overflow = ""; }
-
-function formatDate(ts) {
-  if (!ts) return "";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return d.toLocaleDateString("es-CO", { day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
+// ── Config (logo + avatar) ──────────────────────────────────
+function refreshConfig(){
+  db.collection('config').doc('logo').get().then(d=>{
+    if(d.exists&&d.data().url){ const l=$('appLogo'); if(l){l.src=d.data().url;l.style.display='block';} }
+  }).catch(()=>{});
+  db.collection('config').doc('adminAvatar').get().then(d=>{
+    if(d.exists&&d.data().url) adminAvatarUrl=d.data().url;
+  }).catch(()=>{});
 }
 
-// ─── Logo & Avatar ────────────────────────────────────────
-function refreshLogo() {
-  db.collection("config").doc("logo").get().then(doc => {
-    if (doc.exists && doc.data().url) {
-      const logo = $("appLogo");
-      if (logo) { logo.src = doc.data().url; logo.style.display = "block"; }
-      const ml = document.querySelector(".modal-logo");
-      if (ml) { ml.src = doc.data().url; ml.style.display = "block"; }
-    }
-  }).catch(() => {});
-  // Load admin avatar
-  db.collection("config").doc("adminAvatar").get().then(doc => {
-    if (doc.exists && doc.data().url) {
-      adminAvatarUrl = doc.data().url;
-    }
-  }).catch(() => {});
-}
-
-// ─── Auth State ───────────────────────────────────────────
-auth.onAuthStateChanged(user => {
-  currentUser = user;
-  if (user) {
-    // Admin logged in
-    hide("btnShowLogin");
-    show("btnLogout");
-    show("adminBadge");
-    show("adminToolbar");
-    document.body.classList.add("admin-mode");
-    hide("fabMessage");
-    loadUnreadCount();
+// ── Auth ────────────────────────────────────────────────────
+auth.onAuthStateChanged(user=>{
+  currentUser=user;
+  if(user){
+    hide('btnShowLogin'); show('btnLogout'); show('adminBadge'); show('adminToolbar');
+    document.body.classList.add('admin-mode'); hide('fabMessage'); loadUnread();
   } else {
-    show("btnShowLogin");
-    hide("btnLogout");
-    hide("adminBadge");
-    hide("adminToolbar");
-    document.body.classList.remove("admin-mode");
-    show("fabMessage");
+    show('btnShowLogin'); hide('btnLogout'); hide('adminBadge'); hide('adminToolbar');
+    document.body.classList.remove('admin-mode'); show('fabMessage');
   }
   loadFeed();
 });
 
-// ─── Login ────────────────────────────────────────────────
-$("btnShowLogin").onclick = () => showOverlay("modalLogin");
-$("btnCloseLogin").onclick = () => hideOverlay("modalLogin");
-
-$("togglePass").onclick = () => {
-  const inp = $("loginPass");
-  inp.type = inp.type === "password" ? "text" : "password";
-};
-
-$("loginForm").onsubmit = async (e) => {
+$('btnShowLogin').onclick=()=>modal('modalLogin');
+$('btnCloseLogin').onclick=()=>unmodal('modalLogin');
+$('togglePass').onclick=()=>{ const i=$('loginPass'); i.type=i.type==='password'?'text':'password'; };
+$('loginForm').onsubmit=async e=>{
   e.preventDefault();
-  const username = $("loginUser").value.trim();
-  const pass     = $("loginPass").value;
-  if (username !== "admin") {
-    toast("Solo el administrador puede iniciar sesión", "error"); return;
-  }
-  const btn = $("btnLogin");
-  btn.disabled = true;
-  btn.textContent = "Ingresando…";
-  try {
-    // Map "admin" to the Firebase Auth email
-    await auth.signInWithEmailAndPassword("admin@goretti.edu.co", pass);
-    hideOverlay("modalLogin");
-    $("loginForm").reset();
-    toast("¡Bienvenido, Administrador! 👑", "success");
-  } catch {
-    toast("Usuario o contraseña incorrectos", "error");
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Ingresar";
-  }
+  if($('loginUser').value.trim()!=='admin'){ toast('Solo el administrador puede entrar','error'); return; }
+  const btn=$('btnLogin'); btn.disabled=true; btn.textContent='Ingresando…';
+  try{
+    await auth.signInWithEmailAndPassword('admin@goretti.edu.co',$('loginPass').value);
+    unmodal('modalLogin'); $('loginForm').reset(); toast('¡Bienvenido Administrador! 👑','success');
+  }catch{ toast('Usuario o contraseña incorrectos','error'); }
+  finally{ btn.disabled=false; btn.textContent='Ingresar'; }
 };
+$('btnLogout').onclick=()=>{ auth.signOut(); toast('Sesión cerrada','info'); };
 
-$("btnLogout").onclick = () => {
-  auth.signOut();
-  toast("Sesión cerrada", "info");
-};
-
-// ─── Feed ─────────────────────────────────────────────────
-function loadFeed() {
-  if (postsUnsubscribe) postsUnsubscribe();
-  show("loadingFeed");
-  hide("emptyFeed");
-  $("postsContainer").innerHTML = "";
-
-  postsUnsubscribe = db.collection("posts")
-    .orderBy("date", "desc")
-    .onSnapshot(snapshot => {
-      hide("loadingFeed");
-      $("postsContainer").innerHTML = "";
-      if (snapshot.empty) { show("emptyFeed"); return; }
-      hide("emptyFeed");
-      snapshot.forEach(doc => renderPost(doc.id, doc.data()));
-    }, () => {
-      hide("loadingFeed");
-      toast("Error al cargar el feed", "error");
+// ── Feed ────────────────────────────────────────────────────
+function loadFeed(){
+  if(postsUnsubscribe) postsUnsubscribe();
+  show('loadingFeed'); hide('emptyFeed'); $('postsContainer').innerHTML='';
+  postsUnsubscribe=db.collection('posts').orderBy('date','desc').onSnapshot(snap=>{
+    hide('loadingFeed');
+    if(snap.empty){ show('emptyFeed'); $('postsContainer').innerHTML=''; return; }
+    hide('emptyFeed');
+    snap.docChanges().forEach(change=>{
+      const {doc}=change;
+      if(change.type==='added'){
+        const el=renderPost(doc.id,doc.data());
+        const container=$('postsContainer');
+        const children=container.children;
+        if(change.newIndex<children.length) container.insertBefore(el,children[change.newIndex]);
+        else container.appendChild(el);
+      } else if(change.type==='modified'){
+        updatePostCard(doc.id,doc.data());
+      } else if(change.type==='removed'){
+        const el=document.querySelector(`.post-card[data-id="${doc.id}"]`);
+        if(el) el.remove();
+      }
     });
+  },()=>{ hide('loadingFeed'); toast('Error al cargar','error'); });
 }
 
-function renderPost(id, data) {
-  const container = $('postsContainer');
-  const card = document.createElement('div');
-  card.className = 'post-card';
-  card.dataset.id = id;
-  const isAdmin = !!currentUser;
-
-  // Avatar: imagen real si existe, si no inicial
-  const avatarHtml = adminAvatarUrl
-    ? `<div class="post-avatar"><img src="${adminAvatarUrl}" alt="Admin"></div>`
-    : `<div class="post-avatar">👑</div>`;
-
-  let mediaHtml = '';
-  if (data.mediaData && data.mediaType) {
-    if (data.mediaType.startsWith('image/')) {
-      mediaHtml = `<img class="post-media" src="${data.mediaData}" alt="${data.title}" loading="lazy">`;
-    } else if (data.mediaType === 'video/mp4') {
-      mediaHtml = `<video class="post-media-video" controls src="${data.mediaData}"></video>`;
-    } else if (data.mediaType === 'application/pdf') {
-      mediaHtml = `<a class="post-pdf-link" href="${data.mediaData}" target="_blank">📄 Ver PDF adjunto</a>`;
-    }
+function updatePostCard(id,data){
+  const card=document.querySelector(`.post-card[data-id="${id}"]`);
+  if(!card) return;
+  const liked=localStorage.getItem('liked_'+id)==='1';
+  const lc=card.querySelector('.like-count');
+  if(lc) lc.textContent=data.likes||0;
+  const btnLike=card.querySelector('.btn-like');
+  if(btnLike){
+    btnLike.classList.toggle('liked',liked);
+    const svg=btnLike.querySelector('svg');
+    if(svg) svg.setAttribute('fill',liked?'currentColor':'none');
   }
+  const cc=data.commentCount||0;
+  const btnComment=card.querySelector('.btn-comment');
+  if(btnComment){
+    let ac=btnComment.querySelector('.action-count');
+    if(cc>0){ if(!ac){ac=document.createElement('span');ac.className='action-count';btnComment.insertBefore(ac,btnComment.querySelector('svg').nextSibling);}  ac.textContent=cc;
+    } else if(ac) ac.remove();
+  }
+}
 
-  const adminBtns = isAdmin ? `
-    <div class="post-admin-actions">
-      <button class="btn-post-admin btn-post-edit" title="Editar">✏️</button>
-      <button class="btn-post-admin btn-post-delete" title="Eliminar">🗑️</button>
-    </div>` : '';
-
-  const likes    = data.likes || 0;
-  const comments = data.commentCount || 0;
-  const likedKey = `liked_${id}`;
-  const liked    = localStorage.getItem(likedKey) === '1';
-
-  card.innerHTML = `
+function renderPost(id,data){
+  const div=document.createElement('div'); div.className='post-card'; div.dataset.id=id;
+  const isA=!!currentUser;
+  const av=adminAvatarUrl
+    ?`<div class="post-avatar"><img src="${adminAvatarUrl}" alt="Admin"></div>`
+    :`<div class="post-avatar">👑</div>`;
+  let media='';
+  if(data.mediaData&&data.mediaType){
+    if(data.mediaType.startsWith('image/')) media=`<img class="post-media" src="${data.mediaData}" alt="" loading="lazy">`;
+    else if(data.mediaType==='video/mp4') media=`<video class="post-media-video" controls src="${data.mediaData}"></video>`;
+    else if(data.mediaType==='application/pdf') media=`<a class="post-pdf-link" href="${data.mediaData}" target="_blank">📄 Ver PDF</a>`;
+  }
+  const likes=data.likes||0, cc=data.commentCount||0, liked=localStorage.getItem('liked_'+id)==='1';
+  div.innerHTML=`
     <div class="post-header">
-      <div class="post-author-row">
-        ${avatarHtml}
+      <div class="post-author-row">${av}
         <div class="post-meta">
-          <span class="post-author">👑 ${data.author || 'Admin'}</span>
-          <span class="post-date">${formatDate(data.date)}</span>
+          <span class="post-author">👑 ${data.author||'Admin'}</span>
+          <span class="post-date">${fmt(data.date)}</span>
         </div>
       </div>
-      ${adminBtns}
+      ${isA?`<div class="post-admin-actions">
+        <button class="btn-post-admin btn-post-edit" title="Editar">✏️</button>
+        <button class="btn-post-admin btn-post-delete" title="Eliminar">🗑️</button>
+      </div>`:''}
     </div>
-    ${mediaHtml}
+    ${media}
     <div class="post-body">
-      <div class="post-title">${data.title || ''}</div>
-      <div class="post-text">${(data.body || '').replace(/</g,'&lt;')}</div>
+      <div class="post-title">${data.title||''}</div>
+      <div class="post-text">${(data.body||'').replace(/</g,'&lt;')}</div>
     </div>
     <div class="post-actions">
-      <button class="btn-post-action btn-like ${liked ? 'liked' : ''}">
-        <svg viewBox="0 0 24 24" fill="${liked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      <button class="btn-post-action btn-like${liked?' liked':''}">
+        <svg viewBox="0 0 24 24" fill="${liked?'currentColor':'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
         <span class="like-count">${likes}</span>
       </button>
       <button class="btn-post-action btn-comment">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span class="action-count">${comments > 0 ? comments : ''}</span>
-        Comentarios
+        ${cc>0?`<span class="action-count">${cc}</span>`:''}Comentar
       </button>
     </div>`;
+  div.querySelector('.btn-like').onclick=()=>toggleLike(id,div);
+  div.querySelector('.btn-comment').onclick=()=>openComments(id);
+  if(isA){
+    div.querySelector('.btn-post-edit').onclick=()=>openEditPost(id,data);
+    div.querySelector('.btn-post-delete').onclick=()=>deletePost(id);
+  }
+  return div;
+}
 
-  container.appendChild(card);
-  card.querySelector('.btn-like').onclick    = () => toggleLike(id, liked);
-  card.querySelector('.btn-comment').onclick = () => openComments(id);
-  if (isAdmin) {
-    card.querySelector('.btn-post-edit').onclick   = () => openEditPost(id, data);
-    card.querySelector('.btn-post-delete').onclick = () => deletePost(id);
+async function toggleLike(pid,card){
+  const btnLike=card.querySelector('.btn-like');
+  const likeCount=card.querySelector('.like-count');
+  const wasLiked=localStorage.getItem('liked_'+pid)==='1';
+  const nowLiked=!wasLiked;
+  // Optimistic UI
+  btnLike.classList.toggle('liked',nowLiked);
+  btnLike.querySelector('svg').setAttribute('fill',nowLiked?'currentColor':'none');
+  const cur=parseInt(likeCount.textContent)||0;
+  likeCount.textContent=nowLiked?cur+1:Math.max(0,cur-1);
+  localStorage.setItem('liked_'+pid,nowLiked?'1':'0');
+  try{
+    await db.collection('posts').doc(pid).update({likes:firebase.firestore.FieldValue.increment(nowLiked?1:-1)});
+  }catch{
+    // Revert on error
+    btnLike.classList.toggle('liked',wasLiked);
+    btnLike.querySelector('svg').setAttribute('fill',wasLiked?'currentColor':'none');
+    likeCount.textContent=cur;
+    localStorage.setItem('liked_'+pid,wasLiked?'1':'0');
+    toast('Error al dar like','error');
   }
 }
 
-// ─── Likes (Firestore increment atómico) ──────────────────
-async function toggleLike(postId, isLiked) {
-  const key = `liked_${postId}`;
-  try {
-    await db.collection('posts').doc(postId).update({
-      likes: firebase.firestore.FieldValue.increment(isLiked ? -1 : 1)
-    });
-    localStorage.setItem(key, isLiked ? '0' : '1');
-  } catch { toast('No se pudo registrar el like', 'error'); }
+// ── New Post ────────────────────────────────────────────────
+$('btnNewPost').onclick=()=>modal('modalNewPost');
+$('btnCloseNewPost').onclick=()=>{ unmodal('modalNewPost'); $('postForm').reset(); hide('filePreview'); };
+$('btnCancelPost').onclick=()=>{ unmodal('modalNewPost'); $('postForm').reset(); hide('filePreview'); };
+
+const dz=$('dropZone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{ e.preventDefault();dz.classList.remove('drag-over');
+  if(e.dataTransfer.files[0]) prevFile(e.dataTransfer.files[0],$('postMedia'),'filePreview'); });
+$('postMedia').onchange=e=>{ if(e.target.files[0]) prevFile(e.target.files[0],$('postMedia'),'filePreview'); };
+
+function prevFile(f,inp,pid){
+  if(f.size>4.5*1024*1024){toast('Archivo supera 4MB','error');inp.value='';return;}
+  const p=$(pid); p.innerHTML=''; show(pid);
+  if(f.type.startsWith('image/')){const i=document.createElement('img');i.src=URL.createObjectURL(f);p.appendChild(i);}
+  else p.innerHTML=`<div class="preview-name">📄 ${f.name}</div>`;
 }
+const b64=f=>new Promise((r,j)=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.onerror=j;rd.readAsDataURL(f);});
+function compress(f,w=1200,q=0.8){return new Promise(r=>{
+  const img=new Image(),u=URL.createObjectURL(f);
+  img.onload=()=>{const s=Math.min(1,w/img.width),cv=document.createElement('canvas');
+    cv.width=img.width*s;cv.height=img.height*s;cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    URL.revokeObjectURL(u);r(cv.toDataURL('image/jpeg',q));};img.src=u;});}
 
-// ─── New Post ─────────────────────────────────────────────
-$("btnNewPost").onclick = () => showOverlay("modalNewPost");
-$("btnCloseNewPost").onclick = () => { hideOverlay("modalNewPost"); $("postForm").reset(); hide("filePreview"); };
-$("btnCancelPost").onclick   = () => { hideOverlay("modalNewPost"); $("postForm").reset(); hide("filePreview"); };
-
-// File drag & drop
-const dropZone = $("dropZone");
-dropZone.addEventListener("dragover",  e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
-dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
-dropZone.addEventListener("drop", e => {
+$('postForm').onsubmit=async e=>{
   e.preventDefault();
-  dropZone.classList.remove("drag-over");
-  const file = e.dataTransfer.files[0];
-  if (file) handleFilePreview(file, $("postMedia"), $("filePreview"));
-});
-$("postMedia").onchange = (e) => {
-  if (e.target.files[0]) handleFilePreview(e.target.files[0], $("postMedia"), $("filePreview"));
+  const t=$('postTitle').value.trim(),b=$('postBody').value.trim(),f=$('postMedia').files[0];
+  if(!t||!b){toast('Completa título y contenido','error');return;}
+  const btn=$('btnSubmitPost'); btn.disabled=true; btn.textContent='Publicando…';
+  try{
+    let md=null,mt=null;
+    if(f){mt=f.type;md=f.type.startsWith('image/')?await compress(f):await b64(f);}
+    await db.collection('posts').add({title:t,body:b,author:'Admin',likes:0,commentCount:0,
+      date:firebase.firestore.FieldValue.serverTimestamp(),mediaData:md,mediaType:mt});
+    unmodal('modalNewPost');$('postForm').reset();hide('filePreview');toast('¡Publicado! 🎉','success');
+  }catch(err){toast('Error: '+err.message,'error');}
+  finally{btn.disabled=false;btn.textContent='Publicar';}
 };
 
-function handleFilePreview(file, input, previewEl) {
-  if (file.size > 4.5 * 1024 * 1024) {
-    toast("El archivo supera 4MB. Por favor elige uno más pequeño.", "error");
-    input.value = ""; return;
-  }
-  const prevDiv = previewEl;
-  prevDiv.innerHTML = "";
-  show(prevDiv.id);
-  if (file.type.startsWith("image/")) {
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(file);
-    prevDiv.appendChild(img);
+// ── Edit Post ───────────────────────────────────────────────
+$('btnCloseEditPost').onclick=()=>unmodal('modalEditPost');
+$('btnCancelEdit').onclick=()=>unmodal('modalEditPost');
+function openEditPost(id,data){$('editPostId').value=id;$('editPostTitle').value=data.title||'';$('editPostBody').value=data.body||'';modal('modalEditPost');}
+$('editPostForm').onsubmit=async e=>{
+  e.preventDefault();
+  const id=$('editPostId').value,t=$('editPostTitle').value.trim(),b=$('editPostBody').value.trim();
+  if(!t||!b){toast('Completa los campos','error');return;}
+  const btn=$('btnSubmitEdit');btn.disabled=true;btn.textContent='Guardando…';
+  try{await db.collection('posts').doc(id).update({title:t,body:b});unmodal('modalEditPost');toast('Actualizado ✅','success');}
+  catch(err){toast('Error: '+err.message,'error');}
+  finally{btn.disabled=false;btn.textContent='Guardar cambios';}
+};
+
+async function deletePost(id){
+  if(!confirm('¿Eliminar esta publicación?')) return;
+  try{
+    const cs=await db.collection('posts').doc(id).collection('comments').get();
+    const bt=db.batch(); cs.forEach(d=>bt.delete(d.ref)); bt.delete(db.collection('posts').doc(id)); await bt.commit();
+    toast('Eliminada','info');
+  }catch(err){toast('Error: '+err.message,'error');}
+}
+
+// ── Comments Bottom Sheet ───────────────────────────────────
+$('btnCloseSheet').onclick=closeSheet;
+$('commentsBackdrop').onclick=closeSheet;
+$('btnCancelReply').onclick=cancelReply;
+
+function openSheet(){$('commentsBackdrop').classList.remove('hide');$('commentsSheet').classList.add('open');document.body.style.overflow='hidden';}
+function closeSheet(){$('commentsSheet').classList.remove('open');$('commentsBackdrop').classList.add('hide');document.body.style.overflow='';currentPostId=null;cancelReply();}
+
+function showReplyIndicator(commentId,authorName){
+  replyingTo={commentId,authorName};
+  $('replyIndicator').style.display='flex';
+  $('replyIndicatorName').textContent=authorName;
+  $('commentTextSheet').focus();
+}
+function cancelReply(){
+  replyingTo=null;
+  $('replyIndicator').style.display='none';
+}
+
+async function openComments(pid){
+  currentPostId=pid; cancelReply();
+  $('commentsListSheet').innerHTML='<div class="sheet-no-comments">⏳ Cargando…</div>';
+  const sv=localStorage.getItem('visitorName')||'';
+  if(!currentUser){
+    $('commentNameSheet').value=sv; $('commentNameSheet').style.display='';
+    $('commenterAvatar').style.display='none'; $('commenterAvatarInitial').style.display='flex';
   } else {
-    prevDiv.innerHTML = `<div class="preview-name">📄 ${file.name}</div>`;
+    $('commentNameSheet').value='Admin'; $('commentNameSheet').style.display='none';
+    if(adminAvatarUrl){$('commenterAvatar').src=adminAvatarUrl;$('commenterAvatar').style.display='block';$('commenterAvatarInitial').style.display='none';}
   }
+  openSheet(); renderSheet(pid);
 }
 
-async function readFileAsBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload  = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-async function compressImage(file, maxW = 1200, quality = 0.8) {
-  return new Promise(resolve => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const scale = Math.min(1, maxW / img.width);
-      const canvas = document.createElement("canvas");
-      canvas.width  = img.width  * scale;
-      canvas.height = img.height * scale;
-      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.src = url;
-  });
-}
-
-$("postForm").onsubmit = async (e) => {
-  e.preventDefault();
-  const title  = $("postTitle").value.trim();
-  const body   = $("postBody").value.trim();
-  const file   = $("postMedia").files[0];
-  if (!title || !body) { toast("El título y contenido son obligatorios", "error"); return; }
-
-  const btn = $("btnSubmitPost");
-  btn.disabled = true; btn.textContent = "Publicando…";
-
-  try {
-    let mediaData = null, mediaType = null;
-    if (file) {
-      mediaType = file.type;
-      if (file.type.startsWith("image/")) {
-        mediaData = await compressImage(file);
-      } else {
-        mediaData = await readFileAsBase64(file);
-      }
-    }
-    await db.collection("posts").add({
-      title, body,
-      author: "Admin",
-      date: firebase.firestore.FieldValue.serverTimestamp(),
-      likes: 0,
-      commentCount: 0,
-      mediaData: mediaData || null,
-      mediaType: mediaType || null
+async function renderSheet(pid){
+  const list=$('commentsListSheet');
+  try{
+    const snap=await db.collection('posts').doc(pid).collection('comments').orderBy('date','asc').get();
+    $('sheetCommentsTitle').textContent=snap.size>0?`${snap.size} comentario${snap.size!==1?'s':''}`:'Comentarios';
+    list.innerHTML='';
+    if(snap.empty){list.innerHTML='<div class="sheet-no-comments">💬 Sé el primero en comentar</div>';return;}
+    // Organizar top-level y respuestas
+    const topLevel=[]; const repliesMap=new Map();
+    snap.forEach(doc=>{
+      const c=doc.data();
+      if(!c.parentId) topLevel.push({id:doc.id,data:c});
+      else{ if(!repliesMap.has(c.parentId)) repliesMap.set(c.parentId,[]); repliesMap.get(c.parentId).push({id:doc.id,data:c}); }
     });
-    hideOverlay("modalNewPost");
-    $("postForm").reset();
-    hide("filePreview");
-    toast("¡Publicación creada! 🎉", "success");
-  } catch (err) {
-    toast("Error al publicar: " + err.message, "error");
-  } finally {
-    btn.disabled = false; btn.textContent = "Publicar";
-  }
-};
-
-// ─── Edit Post ────────────────────────────────────────────
-$("btnCloseEditPost").onclick = () => hideOverlay("modalEditPost");
-$("btnCancelEdit").onclick    = () => hideOverlay("modalEditPost");
-
-function openEditPost(id, data) {
-  $("editPostId").value    = id;
-  $("editPostTitle").value = data.title || "";
-  $("editPostBody").value  = data.body  || "";
-  showOverlay("modalEditPost");
-}
-
-$("editPostForm").onsubmit = async (e) => {
-  e.preventDefault();
-  const id    = $("editPostId").value;
-  const title = $("editPostTitle").value.trim();
-  const body  = $("editPostBody").value.trim();
-  if (!title || !body) { toast("Completa todos los campos", "error"); return; }
-  const btn = $("btnSubmitEdit");
-  btn.disabled = true; btn.textContent = "Guardando…";
-  try {
-    await db.collection("posts").doc(id).update({ title, body });
-    hideOverlay("modalEditPost");
-    toast("Publicación actualizada ✅", "success");
-  } catch (err) {
-    toast("Error: " + err.message, "error");
-  } finally {
-    btn.disabled = false; btn.textContent = "Guardar cambios";
-  }
-};
-
-// ─── Delete Post ──────────────────────────────────────────
-async function deletePost(id) {
-  if (!confirm("¿Seguro que deseas eliminar esta publicación? Esta acción no se puede deshacer.")) return;
-  try {
-    // Delete comments too
-    const comments = await db.collection("posts").doc(id).collection("comments").get();
-    const batch = db.batch();
-    comments.forEach(doc => batch.delete(doc.ref));
-    batch.delete(db.collection("posts").doc(id));
-    await batch.commit();
-    toast("Publicación eliminada", "info");
-  } catch (err) {
-    toast("Error al eliminar: " + err.message, "error");
-  }
-}
-
-// ─── Comments — Bottom Sheet estilo Instagram ─────────────
-function openSheet() {
-  const sheet    = $('commentsSheet');
-  const backdrop = $('commentsBackdrop');
-  backdrop.classList.remove('hide');
-  sheet.classList.add('open');
-  document.body.style.overflow = 'hidden';
-}
-function closeSheet() {
-  const sheet    = $('commentsSheet');
-  const backdrop = $('commentsBackdrop');
-  sheet.classList.remove('open');
-  backdrop.classList.add('hide');
-  document.body.style.overflow = '';
-  currentPostId = null;
-}
-
-$('btnCloseSheet').onclick  = closeSheet;
-$('commentsBackdrop').onclick = closeSheet;
-
-async function openComments(postId) {
-  currentPostId = postId;
-  const list = $('commentsListSheet');
-  list.innerHTML = `<div class="sheet-no-comments">⏳ Cargando…</div>`;
-
-  // Pre-fill visitor name
-  const savedName = localStorage.getItem('visitorName') || '';
-  if (!currentUser) {
-    $('commentNameSheet').value = savedName;
-    $('commentNameSheet').style.display = '';
-  } else {
-    // Admin: hide name field, show "Admin"
-    $('commentNameSheet').value = 'Admin';
-    $('commentNameSheet').style.display = 'none';
-    // Show admin avatar in input bar
-    if (adminAvatarUrl) {
-      $('commenterAvatar').src = adminAvatarUrl;
-      $('commenterAvatar').style.display = 'block';
-      $('commenterAvatarInitial').style.display = 'none';
-    }
-  }
-
-  openSheet();
-  renderSheetComments(postId);
-}
-
-async function renderSheetComments(postId) {
-  const list = $('commentsListSheet');
-  // Update title with count
-  try {
-    const snap = await db.collection('posts').doc(postId)
-      .collection('comments').orderBy('date', 'asc').get();
-
-    // Update count on post card
-    const card = document.querySelector(`.post-card[data-id="${postId}"]`);
-    if (card) {
-      const countEl = card.querySelector('.action-count');
-      if (countEl) countEl.textContent = snap.size > 0 ? snap.size : '';
-    }
-    $('sheetCommentsTitle').textContent = snap.size > 0
-      ? `${snap.size} comentario${snap.size !== 1 ? 's' : ''}`
-      : 'Comentarios';
-
-    list.innerHTML = '';
-    if (snap.empty) {
-      list.innerHTML = `<div class="sheet-no-comments">Sé el primero en comentar 💬</div>`;
-      return;
-    }
-    snap.forEach(doc => {
-      const c   = doc.data();
-      const isA = c.author === 'Admin';
-      const avatarHtml = isA && adminAvatarUrl
-        ? `<div class="sheet-comment-avatar"><img src="${adminAvatarUrl}" alt="Admin"></div>`
-        : `<div class="sheet-comment-avatar">${isA ? '👑' : c.author.charAt(0).toUpperCase()}</div>`;
-      const delBtn = currentUser
-        ? `<button class="btn-del-sheet-comment" data-cid="${doc.id}">× Eliminar</button>`
-        : '';
-      const el = document.createElement('div');
-      el.className = 'sheet-comment';
-      el.innerHTML = `
-        ${avatarHtml}
-        <div class="sheet-comment-content">
-          <span class="sheet-comment-author${isA ? ' is-admin' : ''}">${isA ? '👑 Admin' : c.author}</span>
-          <div class="sheet-comment-text">${(c.text||'').replace(/</g,'&lt;')}</div>
-          <div class="sheet-comment-date">
-            ${formatDate(c.date)}
-            ${delBtn}
-          </div>
-        </div>`;
-      list.appendChild(el);
-      if (currentUser) {
-        el.querySelector('.btn-del-sheet-comment').onclick = async (e) => {
-          const cid = e.currentTarget.dataset.cid;
-          await db.collection('posts').doc(postId).collection('comments').doc(cid).delete();
-          // Decrement count
-          await db.collection('posts').doc(postId).update({
-            commentCount: firebase.firestore.FieldValue.increment(-1)
-          });
-          renderSheetComments(postId);
-          toast('Comentario eliminado', 'info');
-        };
-      }
+    topLevel.forEach(({id,data})=>{
+      list.appendChild(buildCommentEl(pid,id,data,false,null));
+      (repliesMap.get(id)||[]).forEach(({id:rid,data:rd})=>list.appendChild(buildCommentEl(pid,rid,rd,true,data.author)));
     });
-    list.scrollTop = list.scrollHeight;
-  } catch (err) {
-    list.innerHTML = `<div class="no-comments">Error al cargar comentarios</div>`;
-  }
+    list.scrollTop=list.scrollHeight;
+  }catch{list.innerHTML='<div class="sheet-no-comments">Error al cargar</div>';}
 }
 
-$("btnSendComment").onclick = async () => {
-  const name = $("commentName").value.trim();
-  const text = $("commentText").value.trim();
-
-  if (!name) { toast("Por favor escribe tu nombre", "error"); return; }
-  if (!text) { toast("Escribe un comentario antes de enviar", "error"); return; }
-
-  // Language filter
-  if (containsBannedWord(text)) {
-    toast("❌ Tu comentario contiene lenguaje inapropiado. Por favor sé respetuoso.", "error");
-    return;
-  }
-
-  // Save visitor name
-  localStorage.setItem("visitorName", name);
-
-  const btn = $("btnSendComment");
-  btn.disabled = true; btn.textContent = "Enviando…";
-  try {
-    const authorName = currentUser ? "Admin" : name;
-    await db.collection("posts").doc(currentPostId).collection("comments").add({
-      author: authorName,
-      text,
-      date: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    $("commentText").value = "";
-    renderComments(currentPostId);
-    toast("Comentario enviado 💬", "success");
-  } catch (err) {
-    toast("Error al enviar: " + err.message, "error");
-  } finally {
-    btn.disabled = false; btn.textContent = "Enviar comentario";
-  }
-};
-
-// ─── Inbox ────────────────────────────────────────────────
-$("btnInbox").onclick = () => {
-  hide("feedSection");
-  show("inboxSection");
-  loadInbox();
-};
-$("btnBackInbox").onclick = () => {
-  hide("inboxSection");
-  show("feedSection");
-};
-
-async function loadUnreadCount() {
-  try {
-    const snap = await db.collection("messages").where("read", "==", false).get();
-    const badge = $("unreadBadge");
-    if (snap.size > 0) {
-      badge.textContent = snap.size;
-      show("unreadBadge");
-    } else {
-      hide("unreadBadge");
-    }
-  } catch {}
+function buildCommentEl(pid,docId,c,isReply,parentAuthor){
+  const isA=c.author==='Admin';
+  const av=isA&&adminAvatarUrl
+    ?`<div class="sheet-comment-avatar"><img src="${adminAvatarUrl}" alt="A"></div>`
+    :`<div class="sheet-comment-avatar">${isA?'👑':c.author.charAt(0).toUpperCase()}</div>`;
+  const cl=c.likes||0;
+  const el=document.createElement('div'); el.className='sheet-comment'+(isReply?' reply':'');
+  el.innerHTML=`${av}
+    <div class="sheet-comment-content">
+      ${isReply?`<span class="reply-to-label">↩ ${parentAuthor}</span>`:''}
+      <span class="sheet-comment-author${isA?' is-admin':''}">${isA?'👑 Admin':c.author}</span>
+      <div class="sheet-comment-text">${(c.text||'').replace(/</g,'&lt;')}</div>
+      <div class="sheet-comment-meta">
+        <span class="sheet-comment-date">${fmt(c.date)}</span>
+        <button class="btn-clike${localStorage.getItem('cliked_'+docId)==='1'?' liked':''}">❤️ ${cl>0?`<span>${cl}</span>`:''}</button>
+        <button class="btn-reply-comment">↩ Responder</button>
+        ${currentUser?`<button class="btn-del-sheet-comment" data-cid="${docId}">🗑</button>`:''}
+      </div>
+    </div>`;
+  el.querySelector('.btn-clike').onclick=async()=>{
+    const ck=localStorage.getItem('cliked_'+docId)==='1';
+    await db.collection('posts').doc(pid).collection('comments').doc(docId)
+      .update({likes:firebase.firestore.FieldValue.increment(ck?-1:1)});
+    localStorage.setItem('cliked_'+docId,ck?'0':'1'); renderSheet(pid);
+  };
+  el.querySelector('.btn-reply-comment').onclick=()=>showReplyIndicator(docId,c.author);
+  if(currentUser) el.querySelector('.btn-del-sheet-comment').onclick=async()=>{
+    try{
+      const batch=db.batch();
+      batch.delete(db.collection('posts').doc(pid).collection('comments').doc(docId));
+      // borrar también respuestas hijas
+      const kids=await db.collection('posts').doc(pid).collection('comments').where('parentId','==',docId).get();
+      let count=1; kids.forEach(d=>{batch.delete(d.ref);count++;});
+      await batch.commit();
+      await db.collection('posts').doc(pid).update({commentCount:firebase.firestore.FieldValue.increment(-count)});
+      renderSheet(pid); toast('Comentario eliminado','info');
+    }catch(err){toast('Error: '+err.message,'error');}
+  };
+  return el;
 }
 
-async function loadInbox() {
-  const list = $("inboxList");
-  list.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>Cargando mensajes…</p></div>`;
-  hide("emptyInbox");
-  try {
-    const snap = await db.collection("messages").orderBy("date", "desc").get();
-    list.innerHTML = "";
-    if (snap.empty) { show("emptyInbox"); return; }
-    snap.forEach(doc => {
-      const m = doc.data();
-      const card = document.createElement("div");
-      card.className = `msg-card${m.read ? "" : " unread"}`;
-      const anonTag = m.anonymous ? `<span class="msg-anon-tag">Anónimo</span>` : "";
-      card.innerHTML = `
-        <div class="msg-sender">${m.sender || "Anónimo"}${anonTag}</div>
-        <div class="msg-subject">${m.subject || ""}</div>
-        <div class="msg-body">${(m.body || "").replace(/</g,"&lt;")}</div>
-        <div class="msg-date">${formatDate(m.date)}</div>
-        ${!m.read ? `<button class="btn-mark-read" data-id="${doc.id}">Marcar como leído ✓</button>` : ""}`;
+$('btnPostComment').onclick=async()=>{
+  const name=$('commentNameSheet').value.trim(), text=$('commentTextSheet').value.trim();
+  if(!currentUser&&!name){toast('Escribe tu nombre','error');$('commentNameSheet').focus();return;}
+  if(!text){toast('Escribe un comentario','error');$('commentTextSheet').focus();return;}
+  if(bad(text)){toast('❌ Lenguaje inapropiado. Sé respetuoso.','error');return;}
+  if(!currentUser) localStorage.setItem('visitorName',name);
+  const btn=$('btnPostComment'); btn.disabled=true;
+  try{
+    const commentData={author:currentUser?'Admin':name,text,likes:0,date:firebase.firestore.FieldValue.serverTimestamp()};
+    if(replyingTo) commentData.parentId=replyingTo.commentId;
+    await db.collection('posts').doc(currentPostId).collection('comments').add(commentData);
+    await db.collection('posts').doc(currentPostId).update({commentCount:firebase.firestore.FieldValue.increment(1)});
+    $('commentTextSheet').value=''; cancelReply(); renderSheet(currentPostId); toast('Comentario publicado 💬','success');
+  }catch(err){toast('Error: '+err.message,'error');}
+  finally{btn.disabled=false;}
+};
+
+// ── Inbox ───────────────────────────────────────────────────
+$('btnInbox').onclick=()=>{hide('feedSection');show('inboxSection');loadInbox();};
+$('btnBackInbox').onclick=()=>{hide('inboxSection');show('feedSection');};
+
+async function loadUnread(){
+  try{const s=await db.collection('messages').where('read','==',false).get();
+    if(s.size>0){$('unreadBadge').textContent=s.size;show('unreadBadge');}else hide('unreadBadge');
+  }catch{}
+}
+
+async function loadInbox(){
+  const list=$('inboxList'); hide('emptyInbox');
+  list.innerHTML='<div class="loading-state"><div class="spinner"></div><p>Cargando…</p></div>';
+  try{
+    const snap=await db.collection('messages').orderBy('date','desc').get();
+    list.innerHTML='';
+    if(snap.empty){show('emptyInbox');return;}
+    snap.forEach(doc=>{
+      const m=doc.data(),card=document.createElement('div');
+      card.className='msg-card'+(m.read?'':' unread');
+      card.innerHTML=`
+        <div class="msg-sender">${m.sender||'Anónimo'}${m.anonymous?'<span class="msg-anon-tag">Anónimo</span>':''}</div>
+        <div class="msg-subject">${m.subject||''}</div>
+        <div class="msg-body">${(m.body||'').replace(/</g,'&lt;')}</div>
+        <div class="msg-date">${fmt(m.date)}</div>
+        ${!m.read?`<button class="btn-mark-read" data-id="${doc.id}">Marcar como leído ✓</button>`:''}`;
       list.appendChild(card);
-      if (!m.read) {
-        card.querySelector(".btn-mark-read").onclick = async (e) => {
-          const mid = e.target.dataset.id;
-          await db.collection("messages").doc(mid).update({ read: true });
-          card.classList.remove("unread");
-          e.target.remove();
-          loadUnreadCount();
-          toast("Marcado como leído", "info");
-        };
-      }
+      if(!m.read) card.querySelector('.btn-mark-read').onclick=async e=>{
+        await db.collection('messages').doc(e.target.dataset.id).update({read:true});
+        card.classList.remove('unread');e.target.remove();loadUnread();toast('Leído ✓','info');
+      };
     });
-    loadUnreadCount();
-  } catch (err) {
-    list.innerHTML = `<p style="color:red;padding:20px">Error: ${err.message}</p>`;
-  }
+    loadUnread();
+  }catch(err){list.innerHTML=`<p style="color:red;padding:20px">Error: ${err.message}</p>`;}
 }
 
-// ─── Send Message (students) ──────────────────────────────
-$("fabMessage").onclick    = () => showOverlay("modalMessage");
-$("btnCloseMessage").onclick = () => hideOverlay("modalMessage");
-$("btnCancelMessage").onclick = () => hideOverlay("modalMessage");
-
-// Restore sender name
-const savedSender = localStorage.getItem("visitorName") || "";
-if (savedSender) { const el = $("msgSender"); if (el) el.value = savedSender; }
-
-$("messageForm").onsubmit = async (e) => {
+// ── Send Message ────────────────────────────────────────────
+$('fabMessage').onclick=()=>modal('modalMessage');
+$('btnCloseMessage').onclick=()=>unmodal('modalMessage');
+$('btnCancelMessage').onclick=()=>unmodal('modalMessage');
+const _sv=localStorage.getItem('visitorName')||''; if(_sv&&$('msgSender')) $('msgSender').value=_sv;
+$('messageForm').onsubmit=async e=>{
   e.preventDefault();
-  const sender  = $("msgSender").value.trim();
-  const subject = $("msgSubject").value.trim();
-  const body    = $("msgBody").value.trim();
-  const anon    = $("msgAnon").checked;
-  if (!sender || !subject || !body) {
-    toast("Por favor completa todos los campos", "error"); return;
-  }
-  // Language filter on messages too
-  if (containsBannedWord(body)) {
-    toast("Tu mensaje contiene lenguaje inapropiado. Por favor sé respetuoso.", "error"); return;
-  }
-  localStorage.setItem("visitorName", sender);
-  const btn = $("btnSubmitMessage");
-  btn.disabled = true; btn.textContent = "Enviando…";
-  try {
-    await db.collection("messages").add({
-      sender: anon ? "Anónimo" : sender,
-      subject, body,
-      anonymous: anon,
-      read: false,
-      date: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    hideOverlay("modalMessage");
-    $("messageForm").reset();
-    toast("¡Mensaje enviado al administrador! 📬", "success");
-    loadUnreadCount();
-  } catch (err) {
-    toast("Error al enviar: " + err.message, "error");
-  } finally {
-    btn.disabled = false; btn.textContent = "Enviar mensaje";
-  }
+  const s=$('msgSender').value.trim(),su=$('msgSubject').value.trim(),b=$('msgBody').value.trim(),an=$('msgAnon').checked;
+  if(!s||!su||!b){toast('Completa todos los campos','error');return;}
+  if(bad(b)){toast('Lenguaje inapropiado. Sé respetuoso.','error');return;}
+  localStorage.setItem('visitorName',s);
+  const btn=$('btnSubmitMessage');btn.disabled=true;btn.textContent='Enviando…';
+  try{
+    await db.collection('messages').add({sender:an?'Anónimo':s,subject:su,body:b,anonymous:an,read:false,
+      date:firebase.firestore.FieldValue.serverTimestamp()});
+    unmodal('modalMessage');$('messageForm').reset();toast('¡Mensaje enviado! 📬','success');loadUnread();
+  }catch(err){toast('Error: '+err.message,'error');}
+  finally{btn.disabled=false;btn.textContent='Enviar mensaje';}
 };
 
-// ─── Change Logo ──────────────────────────────────────────
-$("btnChangeLogo").onclick  = () => showOverlay("modalLogo");
-$("btnCloseLogo").onclick   = () => hideOverlay("modalLogo");
-$("btnCancelLogo").onclick  = () => hideOverlay("modalLogo");
-
-$("logoFile").onchange = (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const preview = $("logoPreview");
-  const img = document.createElement("img");
-  img.src = URL.createObjectURL(file);
-  preview.innerHTML = "";
-  preview.appendChild(img);
+// ── Logo ────────────────────────────────────────────────────
+$('btnChangeLogo').onclick=()=>modal('modalLogo');
+$('btnCloseLogo').onclick=()=>unmodal('modalLogo');
+$('btnCancelLogo').onclick=()=>unmodal('modalLogo');
+$('logoFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const p=$('logoPreview'),i=document.createElement('img');i.src=URL.createObjectURL(f);p.innerHTML='';p.appendChild(i);};
+$('btnSaveLogo').onclick=async()=>{
+  const f=$('logoFile').files[0];if(!f){toast('Selecciona imagen','error');return;}
+  const btn=$('btnSaveLogo');btn.disabled=true;btn.textContent='Guardando…';
+  try{
+    const d=await compress(f,300,0.9);
+    await db.collection('config').doc('logo').set({url:d});
+    $('appLogo').src=d;$('appLogo').style.display='block';
+    unmodal('modalLogo');toast('Logo actualizado ✅','success');
+  }catch(err){toast('Error: '+err.message,'error');}
+  finally{btn.disabled=false;btn.textContent='Guardar logo';}
 };
 
-$("btnSaveLogo").onclick = async () => {
-  const file = $("logoFile").files[0];
-  if (!file) { toast("Selecciona una imagen", "error"); return; }
-  const btn = $("btnSaveLogo");
-  btn.disabled = true; btn.textContent = "Guardando…";
-  try {
-    const data = await compressImage(file, 300, 0.9);
-    await db.collection("config").doc("logo").set({ url: data });
-    $("appLogo").src = data;
-    $("appLogo").style.display = "block";
-    const ml = document.querySelector(".modal-logo");
-    if (ml) { ml.src = data; ml.style.display = "block"; }
-    hideOverlay("modalLogo");
-    toast("Logo actualizado ✅", "success");
-  } catch (err) {
-    toast("Error al guardar logo: " + err.message, "error");
-  } finally {
-    btn.disabled = false; btn.textContent = "Guardar logo";
-  }
+// ── Avatar ──────────────────────────────────────────────────
+$('btnChangeAvatar').onclick=()=>{
+  if(adminAvatarUrl){$('avatarPreviewImg').src=adminAvatarUrl;$('avatarPreviewImg').style.display='block';$('avatarPreviewInitial').style.display='none';}
+  modal('modalAvatar');
+};
+$('btnCloseAvatar').onclick=()=>unmodal('modalAvatar');
+$('btnCancelAvatar').onclick=()=>unmodal('modalAvatar');
+$('avatarFile').onchange=e=>{const f=e.target.files[0];if(!f)return;$('avatarPreviewImg').src=URL.createObjectURL(f);$('avatarPreviewImg').style.display='block';$('avatarPreviewInitial').style.display='none';};
+$('btnSaveAvatar').onclick=async()=>{
+  const f=$('avatarFile').files[0];if(!f){toast('Selecciona imagen','error');return;}
+  const btn=$('btnSaveAvatar');btn.disabled=true;btn.textContent='Guardando…';
+  try{
+    const d=await compress(f,200,0.9);
+    await db.collection('config').doc('adminAvatar').set({url:d});
+    adminAvatarUrl=d;unmodal('modalAvatar');toast('Foto actualizada ✅','success');loadFeed();
+  }catch(err){toast('Error: '+err.message,'error');}
+  finally{btn.disabled=false;btn.textContent='Guardar foto';}
 };
 
-// ─── Change Admin Avatar ───────────────────────────────────
-$("btnChangeAvatar").onclick = () => {
-  // Show current avatar in preview
-  if (adminAvatarUrl) {
-    $("avatarPreviewImg").src = adminAvatarUrl;
-    $("avatarPreviewImg").style.display = "block";
-    $("avatarPreviewInitial").style.display = "none";
-  }
-  showOverlay("modalAvatar");
-};
-$("btnCloseAvatar").onclick  = () => hideOverlay("modalAvatar");
-$("btnCancelAvatar").onclick = () => hideOverlay("modalAvatar");
-
-$("avatarFile").onchange = (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const url = URL.createObjectURL(file);
-  $("avatarPreviewImg").src = url;
-  $("avatarPreviewImg").style.display = "block";
-  $("avatarPreviewInitial").style.display = "none";
-};
-
-$("btnSaveAvatar").onclick = async () => {
-  const file = $("avatarFile").files[0];
-  if (!file) { toast("Selecciona una imagen", "error"); return; }
-  const btn = $("btnSaveAvatar");
-  btn.disabled = true; btn.textContent = "Guardando…";
-  try {
-    // Compress to 200x200 for avatar
-    const data = await compressImage(file, 200, 0.9);
-    await db.collection("config").doc("adminAvatar").set({ url: data });
-    adminAvatarUrl = data;
-    // Update avatar in commenter bar if sheet is open
-    const ca = $("commenterAvatar");
-    if (ca) { ca.src = data; ca.style.display = "block"; }
-    const ini = $("commenterAvatarInitial");
-    if (ini) ini.style.display = "none";
-    hideOverlay("modalAvatar");
-    toast("Foto de perfil actualizada ✅", "success");
-    // Reload feed to show new avatar on posts
-    loadFeed();
-  } catch (err) {
-    toast("Error al guardar foto: " + err.message, "error");
-  } finally {
-    btn.disabled = false; btn.textContent = "Guardar foto";
-  }
-};
-
-// ─── Init ─────────────────────────────────────────────────
-refreshLogo();
+// ── Init ────────────────────────────────────────────────────
+refreshConfig();

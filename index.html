@@ -185,16 +185,22 @@
     <button id="btnCloseSheet" class="btn-close-sheet" aria-label="Cerrar">✕</button>
   </div>
   <div id="commentsListSheet" class="sheet-comments-list"></div>
-  <div class="sheet-input-bar">
-    <div id="commenterAvatarWrap" class="commenter-avatar-wrap">
-      <img id="commenterAvatar" class="commenter-avatar" src="" alt="" onerror="this.style.display='none'">
-      <span id="commenterAvatarInitial" class="commenter-avatar-initial">👤</span>
+  <div class="sheet-input-area">
+    <div id="replyIndicator" class="reply-indicator" style="display:none">
+      <span>↩ Respondiendo a <strong id="replyIndicatorName"></strong></span>
+      <button id="btnCancelReply" class="btn-cancel-reply">✕</button>
     </div>
-    <div class="sheet-input-fields">
-      <input type="text" id="commentNameSheet" placeholder="Tu nombre" maxlength="50" class="sheet-name-input">
-      <input type="text" id="commentTextSheet" placeholder="Agrega un comentario..." maxlength="500" class="sheet-comment-input">
+    <div class="sheet-input-bar">
+      <div id="commenterAvatarWrap" class="commenter-avatar-wrap">
+        <img id="commenterAvatar" class="commenter-avatar" src="" alt="" onerror="this.style.display='none'">
+        <span id="commenterAvatarInitial" class="commenter-avatar-initial">👤</span>
+      </div>
+      <div class="sheet-input-fields">
+        <input type="text" id="commentNameSheet" placeholder="Tu nombre" maxlength="50" class="sheet-name-input">
+        <input type="text" id="commentTextSheet" placeholder="Agrega un comentario..." maxlength="500" class="sheet-comment-input">
+      </div>
+      <button id="btnPostComment" class="btn-post-comment">Publicar</button>
     </div>
-    <button id="btnPostComment" class="btn-post-comment">Publicar</button>
   </div>
 </div>
 
