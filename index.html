@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Goretti Social — I.E.M. María Goretti Pasto</title>
+  <meta name="description" content="Red social oficial de la I.E.M. María Goretti de Pasto. Noticias, eventos y publicaciones del colegio.">
+  <meta name="theme-color" content="#b71c1c">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ── TOASTS ── -->
+<div id="toastContainer" class="toast-container"></div>
+
+<!-- ══════════════ HEADER ══════════════ -->
+<header class="app-header">
+  <div class="header-inner">
+    <div class="header-brand">
+      <img id="appLogo" class="header-logo" src="logo.png" alt="Logo Goretti" onerror="this.style.display='none'">
+      <div class="brand-text">
+        <span class="brand-goretti">Goretti</span>
+        <span class="brand-social">Social</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span id="adminBadge" class="admin-badge hide">👑 Admin</span>
+      <button id="btnShowLogin" class="btn-icon-header" title="Administrador" aria-label="Acceso administrador">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </button>
+      <button id="btnLogout" class="btn-icon-header hide" title="Cerrar sesión" aria-label="Cerrar sesión">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+  <!-- Admin toolbar -->
+  <div id="adminToolbar" class="admin-toolbar hide">
+    <button id="btnNewPost" class="admin-tool-btn">✏️ Nuevo Post</button>
+    <button id="btnInbox" class="admin-tool-btn">
+      📬 Mensajes
+      <span id="unreadBadge" class="badge-count hide">0</span>
+    </button>
+    <button id="btnChangeLogo" class="admin-tool-btn">🖼️ Logo</button>
+    <button id="btnChangeAvatar" class="admin-tool-btn">📸 Mi Foto</button>
+  </div>
+</header>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main class="app-main">
+
+  <!-- FEED -->
+  <section id="feedSection" class="app-section">
+    <div id="loadingFeed" class="loading-state">
+      <div class="spinner"></div>
+      <p>Cargando publicaciones…</p>
+    </div>
+    <div id="postsContainer" class="posts-container"></div>
+    <div id="emptyFeed" class="empty-state hide">
+      <div class="empty-icon">📚</div>
+      <h3>No hay publicaciones aún</h3>
+      <p>Próximamente noticias del colegio</p>
+    </div>
+  </section>
+
+  <!-- INBOX (admin) -->
+  <section id="inboxSection" class="app-section hide">
+    <div class="section-topbar">
+      <button class="btn-back" id="btnBackInbox">← Volver</button>
+      <h2>Bandeja de entrada</h2>
+    </div>
+    <div id="inboxList" class="inbox-list"></div>
+    <div id="emptyInbox" class="empty-state hide">
+      <div class="empty-icon">📭</div>
+      <h3>Sin mensajes</h3>
+      <p>Los estudiantes aún no han enviado mensajes</p>
+    </div>
+  </section>
+
+</main>
+
+<!-- FAB Mensaje -->
+<button id="fabMessage" class="fab" title="Enviar mensaje al administrador" aria-label="Enviar mensaje">
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+</button>
+
+<!-- ══════════════ MODALS ══════════════ -->
+
+<!-- Modal: Login Admin -->
+<div id="modalLogin" class="modal-overlay hide" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <button class="modal-close" id="btnCloseLogin" aria-label="Cerrar">✕</button>
+    <div class="modal-head">
+      <img src="logo.png" alt="Logo" class="modal-logo" onerror="this.style.display='none'">
+      <h2>Acceso Administrativo</h2>
+      <p class="modal-sub">Solo personal autorizado</p>
+    </div>
+    <form id="loginForm" class="modal-form" novalidate>
+      <div class="form-group">
+        <label for="loginUser">Usuario</label>
+        <input type="text" id="loginUser" placeholder="admin" autocomplete="username" required>
+      </div>
+      <div class="form-group">
+        <label for="loginPass">Contraseña</label>
+        <div class="pass-wrap">
+          <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password" required>
+          <button type="button" id="togglePass" class="btn-eye" aria-label="Ver contraseña">👁</button>
+        </div>
+      </div>
+      <button type="submit" class="btn-primary btn-full" id="btnLogin">Ingresar</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Nuevo Post -->
+<div id="modalNewPost" class="modal-overlay hide" role="dialog" aria-modal="true">
+  <div class="modal-box modal-lg">
+    <button class="modal-close" id="btnCloseNewPost" aria-label="Cerrar">✕</button>
+    <div class="modal-head">
+      <h2>✏️ Nueva Publicación</h2>
+    </div>
+    <form id="postForm" class="modal-form" novalidate>
+      <div class="form-group">
+        <label for="postTitle">Título *</label>
+        <input type="text" id="postTitle" placeholder="Título de la publicación" maxlength="100" required>
+      </div>
+      <div class="form-group">
+        <label for="postBody">Contenido *</label>
+        <textarea id="postBody" placeholder="Escribe el contenido aquí…" rows="5" required></textarea>
+      </div>
+      <div class="form-group">
+        <label>Imagen / Video / PDF <span class="hint">(máx. 4 MB)</span></label>
+        <div class="drop-zone" id="dropZone">
+          <span class="drop-icon">📁</span>
+          <p>Arrastra o <label for="postMedia" class="link-label">selecciona un archivo</label></p>
+          <input type="file" id="postMedia" accept="image/*,video/mp4,application/pdf" class="hidden-input">
+        </div>
+        <div id="filePreview" class="file-preview hide"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="btnCancelPost">Cancelar</button>
+        <button type="submit" class="btn-primary" id="btnSubmitPost">Publicar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Editar Post -->
+<div id="modalEditPost" class="modal-overlay hide" role="dialog" aria-modal="true">
+  <div class="modal-box modal-lg">
+    <button class="modal-close" id="btnCloseEditPost" aria-label="Cerrar">✕</button>
+    <div class="modal-head">
+      <h2>✏️ Editar Publicación</h2>
+    </div>
+    <form id="editPostForm" class="modal-form" novalidate>
+      <input type="hidden" id="editPostId">
+      <div class="form-group">
+        <label for="editPostTitle">Título *</label>
+        <input type="text" id="editPostTitle" placeholder="Título" maxlength="100" required>
+      </div>
+      <div class="form-group">
+        <label for="editPostBody">Contenido *</label>
+        <textarea id="editPostBody" placeholder="Contenido…" rows="5" required></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="btnCancelEdit">Cancelar</button>
+        <button type="submit" class="btn-primary" id="btnSubmitEdit">Guardar cambios</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Comments Bottom Sheet Backdrop -->
+<div id="commentsBackdrop" class="sheet-backdrop hide"></div>
+
+<!-- Comments Bottom Sheet -->
+<div id="commentsSheet" class="comments-sheet">
+  <div class="sheet-handle-wrap"><div class="sheet-handle"></div></div>
+  <div class="sheet-header">
+    <h3 id="sheetCommentsTitle">Comentarios</h3>
+    <button id="btnCloseSheet" class="btn-close-sheet" aria-label="Cerrar">✕</button>
+  </div>
+  <div id="commentsListSheet" class="sheet-comments-list"></div>
+  <div class="sheet-input-bar">
+    <div id="commenterAvatarWrap" class="commenter-avatar-wrap">
+      <img id="commenterAvatar" class="commenter-avatar" src="" alt="" onerror="this.style.display='none'">
+      <span id="commenterAvatarInitial" class="commenter-avatar-initial">👤</span>
+    </div>
+    <div class="sheet-input-fields">
+      <input type="text" id="commentNameSheet" placeholder="Tu nombre" maxlength="50" class="sheet-name-input">
+      <input type="text" id="commentTextSheet" placeholder="Agrega un comentario..." maxlength="500" class="sheet-comment-input">
+    </div>
+    <button id="btnPostComment" class="btn-post-comment">Publicar</button>
+  </div>
+</div>
+
+<!-- Modal: Enviar Mensaje al Admin -->
+<div id="modalMessage" class="modal-overlay hide" role="dialog" aria-modal="true">
+  <div class="modal-box modal-lg">
+    <button class="modal-close" id="btnCloseMessage" aria-label="Cerrar">✕</button>
+    <div class="modal-head">
+      <h2>📬 Mensaje al Administrador</h2>
+      <p class="modal-sub">Tu mensaje llegará directamente al administrador</p>
+    </div>
+    <form id="messageForm" class="modal-form" novalidate>
+      <div class="form-group">
+        <label for="msgSender">Tu nombre *</label>
+        <input type="text" id="msgSender" placeholder="¿Cómo te llamas?" maxlength="80" required>
+      </div>
+      <div class="form-group">
+        <label for="msgSubject">Asunto *</label>
+        <input type="text" id="msgSubject" placeholder="¿De qué se trata?" maxlength="100" required>
+      </div>
+      <div class="form-group">
+        <label for="msgBody">Mensaje *</label>
+        <textarea id="msgBody" placeholder="Escribe tu mensaje…" rows="5" required></textarea>
+      </div>
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="msgAnon"> Enviar de forma anónima
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="btnCancelMessage">Cancelar</button>
+        <button type="submit" class="btn-primary" id="btnSubmitMessage">Enviar mensaje</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Cambiar Logo -->
+<div id="modalLogo" class="modal-overlay hide" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <button class="modal-close" id="btnCloseLogo" aria-label="Cerrar">✕</button>
+    <div class="modal-head">
+      <h2>🖼️ Cambiar Logo</h2>
+      <p class="modal-sub">Selecciona la nueva imagen del logo</p>
+    </div>
+    <div class="modal-form">
+      <div class="form-group">
+        <input type="file" id="logoFile" accept="image/*">
+      </div>
+      <div id="logoPreview" class="logo-preview"></div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="btnCancelLogo">Cancelar</button>
+        <button type="button" class="btn-primary" id="btnSaveLogo">Guardar logo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Cambiar Foto de Perfil Admin -->
+<div id="modalAvatar" class="modal-overlay hide" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <button class="modal-close" id="btnCloseAvatar" aria-label="Cerrar">✕</button>
+    <div class="modal-head">
+      <h2>📸 Foto de Perfil</h2>
+      <p class="modal-sub">Esta foto aparecerá en tus publicaciones</p>
+    </div>
+    <div class="modal-form">
+      <div class="avatar-preview-wrap">
+        <img id="avatarPreviewImg" class="avatar-preview-img" src="" alt="Vista previa" onerror="this.style.display='none'">
+        <div id="avatarPreviewInitial" class="avatar-preview-initial">👑</div>
+      </div>
+      <div class="form-group">
+        <input type="file" id="avatarFile" accept="image/*">
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="btnCancelAvatar">Cancelar</button>
+        <button type="button" class="btn-primary" id="btnSaveAvatar">Guardar foto</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Firebase SDK ── -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="app.js"></script>
+
+<!-- PWA Service Worker -->
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js').catch(() => {});
+  }
+</script>
+</body>
+</html>
