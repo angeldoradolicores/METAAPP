@@ -48,10 +48,10 @@ auth.onAuthStateChanged(user=>{
   currentUser=user;
   if(user){
     hide('btnShowLogin'); show('btnLogout'); show('adminBadge'); show('adminToolbar');
-    document.body.classList.add('admin-mode'); hide('fabMessage'); loadUnread();
+    document.body.classList.add('admin-mode');
   } else {
     show('btnShowLogin'); hide('btnLogout'); hide('adminBadge'); hide('adminToolbar');
-    document.body.classList.remove('admin-mode'); show('fabMessage');
+    document.body.classList.remove('admin-mode');
   }
   loadFeed();
 });
@@ -61,11 +61,11 @@ $('btnCloseLogin').onclick=()=>unmodal('modalLogin');
 $('togglePass').onclick=()=>{ const i=$('loginPass'); i.type=i.type==='password'?'text':'password'; };
 $('loginForm').onsubmit=async e=>{
   e.preventDefault();
-  if($('loginUser').value.trim()!=='admin'){ toast('Solo el administrador puede entrar','error'); return; }
+  if($('loginUser').value.trim().toLowerCase()!=='contralora'){ toast('Solo la Contralora puede entrar','error'); return; }
   const btn=$('btnLogin'); btn.disabled=true; btn.textContent='Ingresando…';
   try{
     await auth.signInWithEmailAndPassword('admin@goretti.edu.co',$('loginPass').value);
-    unmodal('modalLogin'); $('loginForm').reset(); toast('¡Bienvenido Administrador! 👑','success');
+    unmodal('modalLogin'); $('loginForm').reset(); toast('¡Bienvenida Contralora Gabriela! 👑','success');
   }catch{ toast('Usuario o contraseña incorrectos','error'); }
   finally{ btn.disabled=false; btn.textContent='Ingresar'; }
 };
@@ -109,13 +109,7 @@ function updatePostCard(id,data){
     const svg=btnLike.querySelector('svg');
     if(svg) svg.setAttribute('fill',liked?'currentColor':'none');
   }
-  const cc=data.commentCount||0;
-  const btnComment=card.querySelector('.btn-comment');
-  if(btnComment){
-    let ac=btnComment.querySelector('.action-count');
-    if(cc>0){ if(!ac){ac=document.createElement('span');ac.className='action-count';btnComment.insertBefore(ac,btnComment.querySelector('svg').nextSibling);}  ac.textContent=cc;
-    } else if(ac) ac.remove();
-  }
+
 }
 
 function renderPost(id,data){
@@ -135,7 +129,7 @@ function renderPost(id,data){
     <div class="post-header">
       <div class="post-author-row">${av}
         <div class="post-meta">
-          <span class="post-author">👑 ${data.author||'Admin'}</span>
+          <span class="post-author">👑 Contralora Gabriela Becerra</span>
           <span class="post-date">${fmt(data.date)}</span>
         </div>
       </div>
@@ -154,13 +148,9 @@ function renderPost(id,data){
         <svg viewBox="0 0 24 24" fill="${liked?'currentColor':'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
         <span class="like-count">${likes}</span>
       </button>
-      <button class="btn-post-action btn-comment">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        ${cc>0?`<span class="action-count">${cc}</span>`:''}Comentar
-      </button>
+
     </div>`;
   div.querySelector('.btn-like').onclick=()=>toggleLike(id,div);
-  div.querySelector('.btn-comment').onclick=()=>openComments(id);
   if(isA){
     div.querySelector('.btn-post-edit').onclick=()=>openEditPost(id,data);
     div.querySelector('.btn-post-delete').onclick=()=>deletePost(id);
@@ -224,7 +214,7 @@ $('postForm').onsubmit=async e=>{
   try{
     let md=null,mt=null;
     if(f){mt=f.type;md=f.type.startsWith('image/')?await compress(f):await b64(f);}
-    await db.collection('posts').add({title:t,body:b,author:'Admin',likes:0,commentCount:0,
+    await db.collection('posts').add({title:t,body:b,author:'Contralora Gabriela Becerra',likes:0,commentCount:0,
       date:firebase.firestore.FieldValue.serverTimestamp(),mediaData:md,mediaType:mt});
     unmodal('modalNewPost');$('postForm').reset();hide('filePreview');toast('¡Publicado! 🎉','success');
   }catch(err){toast('Error: '+err.message,'error');}
@@ -366,42 +356,6 @@ $('btnPostComment').onclick=async()=>{
   }catch(err){toast('Error: '+err.message,'error');}
   finally{btn.disabled=false;}
 };
-
-// ── Inbox ───────────────────────────────────────────────────
-$('btnInbox').onclick=()=>{hide('feedSection');show('inboxSection');loadInbox();};
-$('btnBackInbox').onclick=()=>{hide('inboxSection');show('feedSection');};
-
-async function loadUnread(){
-  try{const s=await db.collection('messages').where('read','==',false).get();
-    if(s.size>0){$('unreadBadge').textContent=s.size;show('unreadBadge');}else hide('unreadBadge');
-  }catch{}
-}
-
-async function loadInbox(){
-  const list=$('inboxList'); hide('emptyInbox');
-  list.innerHTML='<div class="loading-state"><div class="spinner"></div><p>Cargando…</p></div>';
-  try{
-    const snap=await db.collection('messages').orderBy('date','desc').get();
-    list.innerHTML='';
-    if(snap.empty){show('emptyInbox');return;}
-    snap.forEach(doc=>{
-      const m=doc.data(),card=document.createElement('div');
-      card.className='msg-card'+(m.read?'':' unread');
-      card.innerHTML=`
-        <div class="msg-sender">${m.sender||'Anónimo'}${m.anonymous?'<span class="msg-anon-tag">Anónimo</span>':''}</div>
-        <div class="msg-subject">${m.subject||''}</div>
-        <div class="msg-body">${(m.body||'').replace(/</g,'&lt;')}</div>
-        <div class="msg-date">${fmt(m.date)}</div>
-        ${!m.read?`<button class="btn-mark-read" data-id="${doc.id}">Marcar como leído ✓</button>`:''}`;
-      list.appendChild(card);
-      if(!m.read) card.querySelector('.btn-mark-read').onclick=async e=>{
-        await db.collection('messages').doc(e.target.dataset.id).update({read:true});
-        card.classList.remove('unread');e.target.remove();loadUnread();toast('Leído ✓','info');
-      };
-    });
-    loadUnread();
-  }catch(err){list.innerHTML=`<p style="color:red;padding:20px">Error: ${err.message}</p>`;}
-}
 
 // ── Send Message ────────────────────────────────────────────
 $('fabMessage').onclick=()=>modal('modalMessage');

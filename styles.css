@@ -1160,3 +1160,56 @@ body.admin-mode .app-main {
   color: var(--blue);
   background: rgba(26,35,126,.07);
 }
+/* ══════════════════════════════════════
+   GOOGLE FORM BANNER
+══════════════════════════════════════ */
+.form-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(135deg, #1a237e 0%, #283593 60%, #b71c1c 100%);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  text-decoration: none;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(26,35,126,.30);
+  transition: transform .18s ease, box-shadow .18s ease;
+  animation: fadeUp .3s ease both;
+}
+.form-banner:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(26,35,126,.40);
+}
+.form-banner:active { transform: scale(.98); }
+
+.form-banner-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  background: rgba(255,255,255,.15);
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.form-banner-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.form-banner-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.2px;
+}
+.form-banner-sub {
+  font-size: 12px;
+  opacity: .75;
+}
+.form-banner-arrow {
+  flex-shrink: 0;
+  opacity: .7;
+}
