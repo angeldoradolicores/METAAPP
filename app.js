@@ -271,7 +271,7 @@ async function openComments(pid){
     $('commentNameSheet').value=sv; $('commentNameSheet').style.display='';
     $('commenterAvatar').style.display='none'; $('commenterAvatarInitial').style.display='flex';
   } else {
-    $('commentNameSheet').value='Admin'; $('commentNameSheet').style.display='none';
+    $('commentNameSheet').value='Contralora Gabriela Becerra'; $('commentNameSheet').style.display='none';
     if(adminAvatarUrl){$('commenterAvatar').src=adminAvatarUrl;$('commenterAvatar').style.display='block';$('commenterAvatarInitial').style.display='none';}
   }
   openSheet(); renderSheet(pid);
@@ -300,7 +300,7 @@ async function renderSheet(pid){
 }
 
 function buildCommentEl(pid,docId,c,isReply,parentAuthor){
-  const isA=c.author==='Admin';
+  const isA=c.author==='Admin'||c.author==='Contralora Gabriela Becerra';
   const av=isA&&adminAvatarUrl
     ?`<div class="sheet-comment-avatar"><img src="${adminAvatarUrl}" alt="A"></div>`
     :`<div class="sheet-comment-avatar">${isA?'👑':c.author.charAt(0).toUpperCase()}</div>`;
@@ -309,7 +309,7 @@ function buildCommentEl(pid,docId,c,isReply,parentAuthor){
   el.innerHTML=`${av}
     <div class="sheet-comment-content">
       ${isReply?`<span class="reply-to-label">↩ ${parentAuthor}</span>`:''}
-      <span class="sheet-comment-author${isA?' is-admin':''}">${isA?'👑 Admin':c.author}</span>
+      <span class="sheet-comment-author${isA?' is-admin':''}">${isA?'👑 Contralora Gabriela Becerra':c.author}</span>
       <div class="sheet-comment-text">${(c.text||'').replace(/</g,'&lt;')}</div>
       <div class="sheet-comment-meta">
         <span class="sheet-comment-date">${fmt(c.date)}</span>
@@ -348,7 +348,7 @@ $('btnPostComment').onclick=async()=>{
   if(!currentUser) localStorage.setItem('visitorName',name);
   const btn=$('btnPostComment'); btn.disabled=true;
   try{
-    const commentData={author:currentUser?'Admin':name,text,likes:0,date:firebase.firestore.FieldValue.serverTimestamp()};
+    const commentData={author:currentUser?'Contralora Gabriela Becerra':name,text,likes:0,date:firebase.firestore.FieldValue.serverTimestamp()};
     if(replyingTo) commentData.parentId=replyingTo.commentId;
     await db.collection('posts').doc(currentPostId).collection('comments').add(commentData);
     await db.collection('posts').doc(currentPostId).update({commentCount:firebase.firestore.FieldValue.increment(1)});
