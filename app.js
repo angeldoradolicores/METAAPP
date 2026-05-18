@@ -358,25 +358,6 @@ $('btnPostComment').onclick=async()=>{
 };
 
 // ── Send Message ────────────────────────────────────────────
-$('fabMessage').onclick=()=>modal('modalMessage');
-$('btnCloseMessage').onclick=()=>unmodal('modalMessage');
-$('btnCancelMessage').onclick=()=>unmodal('modalMessage');
-const _sv=localStorage.getItem('visitorName')||''; if(_sv&&$('msgSender')) $('msgSender').value=_sv;
-$('messageForm').onsubmit=async e=>{
-  e.preventDefault();
-  const s=$('msgSender').value.trim(),su=$('msgSubject').value.trim(),b=$('msgBody').value.trim(),an=$('msgAnon').checked;
-  if(!s||!su||!b){toast('Completa todos los campos','error');return;}
-  if(bad(b)){toast('Lenguaje inapropiado. Sé respetuoso.','error');return;}
-  localStorage.setItem('visitorName',s);
-  const btn=$('btnSubmitMessage');btn.disabled=true;btn.textContent='Enviando…';
-  try{
-    await db.collection('messages').add({sender:an?'Anónimo':s,subject:su,body:b,anonymous:an,read:false,
-      date:firebase.firestore.FieldValue.serverTimestamp()});
-    unmodal('modalMessage');$('messageForm').reset();toast('¡Mensaje enviado! 📬','success');loadUnread();
-  }catch(err){toast('Error: '+err.message,'error');}
-  finally{btn.disabled=false;btn.textContent='Enviar mensaje';}
-};
-
 // ── Logo ────────────────────────────────────────────────────
 $('btnChangeLogo').onclick=()=>modal('modalLogo');
 $('btnCloseLogo').onclick=()=>unmodal('modalLogo');
