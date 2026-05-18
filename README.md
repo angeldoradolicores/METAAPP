@@ -33,7 +33,7 @@ Red social oficial del colegio. App estilo Instagram para publicar noticias y ev
 
 ---
 
-## 🔑 Paso 3 — Configurar Authentication
+## 🔑 Paso 3 — Configurar Authentication 
 
 1. En el menú: **Compilación → Authentication**
 2. Clic **"Comenzar"** → pestaña **"Sign-in method"**
@@ -142,3 +142,4 @@ goretti-social/
 Si tienes problemas con la configuración, revisa:
 - Firebase Console: https://console.firebase.google.com
 - Vercel Dashboard: https://vercel.com/dashboard
+- final 17 de mayo 2026
